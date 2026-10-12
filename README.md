@@ -1,6 +1,6 @@
 # Muro de mensajes
 
-**Equipo:** Juan David Marciales Niebles (1152431)
+**Equipo:** Juan David Marciales Niebles (1152431) · Carlos Antonio Avendaño Villamizar (1152406)
 **Proyecto de Google Cloud:** `nube-2026-ii` (región `us-central1`, prefijo `marciales`)
 **URL del muro:** https://marciales-frontend-108015969075.us-central1.run.app (sale de `terraform -chdir=infra output -raw url_frontend`)
 
