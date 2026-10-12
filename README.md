@@ -232,10 +232,10 @@ Lo que pierde el usuario: con la pestaña en segundo plano el muro no se actuali
 
 **4. Cómo se resuelve la reproducción.**
 
-El orden necesario es APIs → registro → imágenes → base, identidades y servicios. Terraform no puede hacerlo en un solo `apply`, porque las imágenes no son infraestructura: las produce Docker en medio. El script `desplegar.sh` lo hace en tres pasos:
+El orden necesario es APIs → registro → imágenes → base, identidades y servicios. Terraform no puede hacerlo en un solo `apply`, porque las imágenes no son infraestructura: las produce Cloud Build en medio. El script `desplegar.sh` lo hace en tres pasos:
 
-1. `terraform apply -target=google_artifact_registry_repository.imagenes`: crea solo el registro y, por su `depends_on`, las APIs.
-2. `docker build` y `docker push` de las dos imágenes, con la etiqueta que diga `terraform.tfvars` y con reintentos del push.
+1. `terraform apply -target=google_artifact_registry_repository.imagenes -target=google_project_iam_member.build`: crea el registro y los permisos de Cloud Build y, por su `depends_on`, las APIs.
+2. `gcloud builds submit` de las dos imágenes, con la etiqueta que diga `terraform.tfvars`. Se usa Cloud Build y no `docker push` porque el push desde Cloud Shell falló con `connection refused`. Hay reintentos porque los permisos recién dados tardan en hacer efecto.
 3. `terraform apply` completo: la base, las cuentas de servicio, el rol y los dos servicios, que ya encuentran sus imágenes.
 
 ### Preguntas
