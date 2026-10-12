@@ -4,9 +4,23 @@ resource "google_project_service" "apis" {
     "artifactregistry.googleapis.com",
     "iam.googleapis.com",
     "firestore.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
   ])
   service            = each.value
   disable_on_destroy = false
+}
+
+# Reto, CORS sin ciclo: la URL de un servicio de Cloud Run es predecible
+# (https://<servicio>-<numero de proyecto>.<region>.run.app), asi que la armamos
+# con datos que ya existen antes de crear el frontend. El backend la recibe sin
+# referenciar al recurso frontend, y el grafo queda sin ciclo:
+# backend -> frontend, nunca frontend -> backend -> frontend.
+data "google_project" "actual" {
+  project_id = var.proyecto
+}
+
+locals {
+  url_frontend = "https://${var.prefijo}-frontend-${data.google_project.actual.number}.${var.region}.run.app"
 }
 
 resource "google_artifact_registry_repository" "imagenes" {
@@ -48,6 +62,10 @@ resource "google_cloud_run_v2_service" "backend" {
       env {
         name  = "BASE_DATOS"
         value = google_firestore_database.db.name
+      }
+      env {
+        name  = "ORIGEN_PERMITIDO"
+        value = local.url_frontend
       }
     }
     scaling {
