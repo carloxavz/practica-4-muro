@@ -4,3 +4,6 @@ output "ruta_registro" {
 output "url_backend" {
   value = google_cloud_run_v2_service.backend.uri
 }
+output "url_frontend" {
+  value = google_cloud_run_v2_service.frontend.uri
+}
