@@ -197,6 +197,44 @@ Access to fetch at 'https://marciales-backend-24cnlwn55q-uc.a.run.app/version' f
 
 La petición a `/version` sí llega y responde `200 (OK)`, pero el navegador descarta la respuesta porque el origen no coincide con el permitido.
 
+**Reproducción desde cero:**
+
+```bash
+terraform -chdir=infra destroy
+./desplegar.sh
+# la base recién borrada no liberaba su nombre: se esperó y se repitió el último paso
+sleep 210
+terraform -chdir=infra apply
+```
+
+`destroy` borró los 14 recursos, incluida la base. Después, `desplegar.sh`:
+
+1. Creó con `-target` las APIs, el registro y los tres permisos de Cloud Build (10 recursos).
+2. Construyó y subió `backend:v2` y `frontend:v2` con Cloud Build (`STATUS: SUCCESS` en los dos).
+3. En el `apply` completo creó las cuentas de servicio y el rol del backend, pero falló al crear la base:
+
+```text
+Error: Error creating Database: googleapi: Error 400: Database ID 'marciales-db' is not available
+in project 'nube-2026-ii'. Please retry in 203 seconds.
+```
+
+Una base recién borrada tarda en liberar su nombre. Después de esperar, un `terraform apply` creó lo que faltaba: la base, los dos servicios y sus permisos públicos.
+
+![Evidencia 6.2: reproducción completa, apply final con los outputs](evidencias/evidencia-6.2.png)
+
+```text
+Apply complete! Resources: 5 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+ruta_registro = "us-central1-docker.pkg.dev/nube-2026-ii/marciales-imagenes"
+url_backend = "https://marciales-backend-24cnlwn55q-uc.a.run.app"
+url_frontend = "https://marciales-frontend-108015969075.us-central1.run.app"
+url_frontend_alterna = "https://marciales-frontend-24cnlwn55q-uc.a.run.app"
+```
+
+Las URLs quedaron iguales a las de antes del `destroy`, así que el CORS del backend sigue apuntando al frontend correcto sin tocar nada.
+
 ### Decisiones
 
 **1. La funcionalidad nueva: reacciones "Me gusta".**
@@ -237,6 +275,8 @@ El orden necesario es APIs → registro → imágenes → base, identidades y se
 1. `terraform apply -target=google_artifact_registry_repository.imagenes -target=google_project_iam_member.build`: crea el registro y los permisos de Cloud Build y, por su `depends_on`, las APIs.
 2. `gcloud builds submit` de las dos imágenes, con la etiqueta que diga `terraform.tfvars`. Se usa Cloud Build y no `docker push` porque el push desde Cloud Shell falló con `connection refused`. Hay reintentos porque los permisos recién dados tardan en hacer efecto.
 3. `terraform apply` completo: la base, las cuentas de servicio, el rol y los dos servicios, que ya encuentran sus imágenes.
+
+Si la base se acaba de borrar, Google puede tardar unos minutos en liberar el nombre `marciales-db`. En ese caso hay que esperar y repetir solo el paso 3, como pasó en la reproducción (Evidencia 6.2).
 
 ### Preguntas
 
