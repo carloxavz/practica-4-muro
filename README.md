@@ -170,15 +170,32 @@ Publicado como `v2` cambiando solo las etiquetas en `terraform.tfvars` (`backend
 ```bash
 RUTA=$(terraform -chdir=infra output -raw ruta_registro)
 docker build -t $RUTA/backend:v2 backend
-docker build -t $RUTA/frontend:v2 frontend
 docker push $RUTA/backend:v2
-docker push $RUTA/frontend:v2
+gcloud builds submit frontend --tag $RUTA/frontend:v2
 terraform -chdir=infra apply
-
-# reproducción completa
-terraform -chdir=infra destroy
-./desplegar.sh
+terraform -chdir=infra apply \
+  -replace=google_cloud_run_v2_service.frontend \
+  -replace=google_cloud_run_v2_service_iam_member.frontend_publico
 ```
+
+El primer `apply` falló con `Image '.../frontend:v2' not found`, porque el `docker push` del frontend se cayó con `connect: connection refused`. Por eso el frontend se construyó y se subió con Cloud Build (`gcloud builds submit`), y sus permisos quedaron declarados en `main.tf` (`google_project_iam_member.build`). Como Terraform ya había registrado la imagen `v2` en el servicio, el segundo `apply` no veía cambios: el frontend se recreó con `-replace`.
+
+![Evidencia 6: reacciones funcionando en el muro](evidencias/evidencia-6.png)
+
+El muro, abierto desde `url_frontend` (`marciales-frontend-108015969075.us-central1.run.app`), muestra el botón "Me gusta" con su contador en cada mensaje (4, 2 y 1).
+
+![Evidencia 6.1: error de CORS desde otro origen](evidencias/evidencia-6.1.png)
+
+La misma página abierta desde `url_frontend_alterna` (`marciales-frontend-24cnlwn55q-uc.a.run.app`) no puede hablar con el backend. La consola del navegador muestra el bloqueo:
+
+```text
+Access to fetch at 'https://marciales-backend-24cnlwn55q-uc.a.run.app/version' from origin
+'https://marciales-frontend-24cnlwn55q-uc.a.run.app' has been blocked by CORS policy: The
+'Access-Control-Allow-Origin' header has a value
+'https://marciales-frontend-108015969075.us-central1.run.app' that is not equal to the supplied origin.
+```
+
+La petición a `/version` sí llega y responde `200 (OK)`, pero el navegador descarta la respuesta porque el origen no coincide con el permitido.
 
 ### Decisiones
 
@@ -194,7 +211,7 @@ El frontend necesita la URL del backend, y el backend necesita la del frontend p
 
 Qué la haría fallar:
 
-- Abrir la página desde la otra URL del mismo servicio (`url_frontend_alterna`, con el formato `...-uc.a.run.app`). El navegador manda otro `Origin` y bloquea la respuesta.
+- Abrir la página desde la otra URL del mismo servicio (`url_frontend_alterna`, con el formato `...-uc.a.run.app`). El navegador manda otro `Origin` y bloquea la respuesta, como se ve en la Evidencia 6.1.
 - Un dominio personalizado, un cambio de nombre del servicio o un cambio de Google en el formato de sus URLs.
 
 CORS no es autenticación: lo aplica el navegador, así que `curl` o un script siguen pudiendo llamar a la API.
@@ -202,6 +219,8 @@ CORS no es autenticación: lo aplica el navegador, así que `curl` o un script s
 **3. Cómo se bajaron las lecturas.**
 
 Antes, la página pedía `/mensajes` cada 5 segundos, y cada petición cuesta hasta 20 lecturas en Firestore (una por mensaje devuelto). Ahora hay un documento `meta/estado` con un contador `version`, que la API incrementa en cada mensaje nuevo o reacción. La página consulta `GET /version` cada 5 segundos, que cuesta 1 lectura, y solo pide la lista completa cuando la versión cambió. Con la pestaña oculta no consulta nada, y al volver revisa de inmediato (evento `visibilitychange`).
+
+Las lecturas no se midieron en la consola: la tabla es el cálculo a partir del código.
 
 | Por pestaña abierta, 1 hora (cálculo) | Antes | Después |
 |---|---|---|
