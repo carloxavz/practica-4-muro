@@ -80,6 +80,18 @@
   }
   .autor { font-weight: 650; margin-bottom: .15rem; }
   .cuerpo { line-height: 1.4; overflow-wrap: anywhere; }
+  .contenido { flex: 1; }
+  .reaccion {
+    width: auto;
+    margin-top: .45rem;
+    padding: .25rem .7rem;
+    font-size: .85rem;
+    font-weight: 600;
+    background: #fbfaf9;
+    color: var(--acento);
+    border: 1px solid var(--borde);
+    border-radius: 999px;
+  }
 </style>
 </head>
 <body>
@@ -101,6 +113,8 @@
 <script>
 const API = "__BACKEND_URL__";
 const COLORES = ["#c8102e", "#1f6feb", "#2e7d32", "#8e44ad", "#d35400", "#00838f"];
+const INTERVALO = 5000;
+let versionActual = null;
 
 function colorDe(nombre) {
   let suma = 0;
@@ -108,32 +122,62 @@ function colorDe(nombre) {
   return COLORES[suma % COLORES.length];
 }
 
+function pintar(datos) {
+  const lista = document.getElementById("lista");
+  lista.innerHTML = "";
+  for (const m of datos.mensajes) {
+    const li = document.createElement("li");
+    const inicial = document.createElement("div");
+    inicial.className = "inicial";
+    inicial.textContent = (m.autor[0] || "?").toUpperCase();
+    inicial.style.background = colorDe(m.autor);
+    const contenido = document.createElement("div");
+    contenido.className = "contenido";
+    const autor = document.createElement("div");
+    autor.className = "autor";
+    autor.textContent = m.autor;
+    const cuerpo = document.createElement("div");
+    cuerpo.className = "cuerpo";
+    cuerpo.textContent = m.texto;
+    const boton = document.createElement("button");
+    boton.className = "reaccion";
+    boton.textContent = "Me gusta \u00b7 " + m.likes;
+    boton.onclick = () => reaccionar(m.id, boton);
+    contenido.append(autor, cuerpo, boton);
+    li.append(inicial, contenido);
+    lista.append(li);
+  }
+  document.getElementById("estado").textContent = "Respondió la instancia " + datos.instancia;
+}
+
+// Lista completa: cuesta una lectura de Firestore por cada mensaje (hasta 20).
 async function cargar() {
+  const respuesta = await fetch(API + "/mensajes");
+  pintar(await respuesta.json());
+}
+
+// Revisión barata: cuesta una sola lectura. Solo se pide la lista si algo cambió.
+async function revisar() {
+  if (document.hidden) return;              // pestaña oculta: no se consulta nada
   try {
-    const respuesta = await fetch(API + "/mensajes");
+    const respuesta = await fetch(API + "/version");
     const datos = await respuesta.json();
-    const lista = document.getElementById("lista");
-    lista.innerHTML = "";
-    for (const m of datos.mensajes) {
-      const li = document.createElement("li");
-      const inicial = document.createElement("div");
-      inicial.className = "inicial";
-      inicial.textContent = (m.autor[0] || "?").toUpperCase();
-      inicial.style.background = colorDe(m.autor);
-      const contenido = document.createElement("div");
-      const autor = document.createElement("div");
-      autor.className = "autor";
-      autor.textContent = m.autor;
-      const cuerpo = document.createElement("div");
-      cuerpo.className = "cuerpo";
-      cuerpo.textContent = m.texto;
-      contenido.append(autor, cuerpo);
-      li.append(inicial, contenido);
-      lista.append(li);
+    if (datos.version !== versionActual) {
+      versionActual = datos.version;
+      await cargar();
     }
-    document.getElementById("estado").textContent = "Respondió la instancia " + datos.instancia;
   } catch (error) {
     document.getElementById("estado").textContent = "No se pudo hablar con el backend: " + error;
+  }
+}
+
+async function reaccionar(id, boton) {
+  boton.disabled = true;
+  try {
+    await fetch(API + "/mensajes/" + encodeURIComponent(id) + "/like", { method: "POST" });
+    await revisar();
+  } finally {
+    boton.disabled = false;
   }
 }
 
@@ -150,14 +194,17 @@ document.getElementById("enviar").onclick = async () => {
       body: JSON.stringify({ autor, texto })
     });
     document.getElementById("texto").value = "";
-    await cargar();
+    await revisar();
   } finally {
     boton.disabled = false;
   }
 };
 
-cargar();
-setInterval(cargar, 5000);
+// Al volver a la pestaña se revisa de inmediato, sin esperar el siguiente ciclo.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) revisar(); });
+
+revisar();
+setInterval(revisar, INTERVALO);
 </script>
 </body>
 </html>
