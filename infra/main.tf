@@ -5,6 +5,7 @@ resource "google_project_service" "apis" {
     "iam.googleapis.com",
     "firestore.googleapis.com",
     "cloudresourcemanager.googleapis.com",
+    "cloudbuild.googleapis.com",
   ])
   service            = each.value
   disable_on_destroy = false
@@ -28,6 +29,21 @@ resource "google_artifact_registry_repository" "imagenes" {
   location      = var.region
   format        = "DOCKER"
   depends_on    = [google_project_service.apis]
+}
+
+# Las imagenes se construyen con gcloud builds submit, que corre con la cuenta
+# por defecto de Compute: necesita subir al registro, leer el codigo que se sube
+# a Cloud Storage y escribir sus registros.
+resource "google_project_iam_member" "build" {
+  for_each = toset([
+    "roles/artifactregistry.writer",
+    "roles/storage.objectViewer",
+    "roles/logging.logWriter",
+  ])
+  project    = var.proyecto
+  role       = each.value
+  member     = "serviceAccount:${data.google_project.actual.number}-compute@developer.gserviceaccount.com"
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_firestore_database" "db" {
